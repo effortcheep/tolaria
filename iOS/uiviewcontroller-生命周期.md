@@ -395,9 +395,11 @@ B viewDidLoad           ← 首次触发，只调一次
 B viewWillAppear
 B viewWillLayoutSubviews
 B viewDidLayoutSubviews
-A viewDidDisappear
-B viewDidAppear
+B viewDidAppear         ← B 先完全显示
+A viewDidDisappear      ← A 后消失
 ```
+
+> ⚠️ 和 push/pop 不同：present 时 B 的 `viewDidAppear` 在 A 的 `viewDidDisappear` **之前**调用。
 
 **B dismiss 回 A：**
 
@@ -406,11 +408,11 @@ B viewWillDisappear
 A viewWillAppear         ← A 的 viewDidLoad 不会再调（视图还在内存）
 A viewWillLayoutSubviews
 A viewDidLayoutSubviews
-B viewDidDisappear
-A viewDidAppear
+A viewDidAppear          ← A 先完全显示
+B viewDidDisappear       ← B 后消失
 ```
 
-> 和 push/pop 一样，`viewDidLoad` 只在首次调用。
+> ⚠️ dismiss 时 A 的 `viewDidAppear` 在 B 的 `viewDidDisappear` **之前**调用。`viewDidLoad` 只在首次调用。
 
 ***
 
