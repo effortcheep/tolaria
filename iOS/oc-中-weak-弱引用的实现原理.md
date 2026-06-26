@@ -83,17 +83,29 @@ objc_storeWeak(&obj, someObject)
 
 ## 四、weak 销毁/置 nil 流程
 
-当对象引用计数归零、即将释放时，调用链为：
+当对象引用计数归零、即将释放时，完整调用链为：
 
 ```
-objc_deallocInstance(obj)
-  └── objc_destructInstance(obj)
-        └── weak_clear_no_lock(&weak_table, obj)
-              ├── 1. 通过对象地址在 weak_table 中找到 weak_entry_t
-              ├── 2. 遍历 referrers 数组中的所有 weak 指针
-              ├── 3. 对每个 weak 指针执行 *referrer = nil
-              └── 4. 从 weak_table 中删除该条目
+dealloc
+  └── _objc_rootDealloc
+        └── rootDealloc
+              └── inline_dealloc
+                    ├── objc_destructInstance(obj)
+                    │     ├── object_cxxDestruct()        // C++ 析构函数
+                    │     └── _object_remove_assocations() // 移除关联对象
+                    │
+                    └── clearDeallocating()               // ← 关键：weak 清理从这里开始
+                          └── clearDeallocating_slow()
+                                ├── sideTable = SideTable()[obj]
+                                └── weak_clear_no_lock(&sideTable->weak_table, obj)
+                                      ├── 1. 通过对象地址在 weak_table 中找到 weak_entry_t
+                                      ├── 2. 遍历 referrers 数组中的所有 weak 指针
+                                      ├── 3. 对每个 weak 指针执行 *referrer = nil
+                                      └── 4. 从 weak_table 中删除该条目
+                    └── free(obj)                         // 最终释放内存
 ```
+
+> **注意：** `clearDeallocating` 仅在 `isa.weakly_referenced == YES` 时触发。如果对象没有任何 weak 引用，这一步会被跳过。
 
 **关键点：** 对象在 `dealloc` 过程中，运行时会自动将所有指向它的 weak 指针置为 `nil`，这就是为什么 weak 指针不会变成悬垂指针。
 
@@ -110,10 +122,12 @@ objc_deallocInstance(obj)
            ──────────────────────►  正常读取，weak 不影响对象生命周期
 
 释放阶段：  obj 引用计数归零
-           ──────────────────────►  weak_clear_no_lock()
-                                     遍历所有 weak 指针 → 置 nil
-                                     删除 weak_entry_t
-                                     对象内存被回收
+           ──────────────────────►  clearDeallocating()  [仅 weakly_referenced]
+                                     └── clearDeallocating_slow()
+                                           └── weak_clear_no_lock()
+                                                 遍历所有 weak 指针 → 置 nil
+                                                 删除 weak_entry_t
+                                     free(obj) → 对象内存被回收
 ```
 
 ---
